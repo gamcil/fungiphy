@@ -16,7 +16,7 @@ URLS = {
 }
 
 PATTERN = re.compile(
-    r"\*(\w+?\s[A-Za-z_-]+?)\s"
+    r"\*(\w+?)\s([A-Za-z_-]+?)\s"
     r"(.+?) "
     r"\[MB(\w+)\]"
     r"\.? — type: (.+?)"
@@ -70,5 +70,3 @@ def scrape(urls=None):
             except:
                 bad.append(sp)
     return good, bad
-
-
