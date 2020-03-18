@@ -1,19 +1,21 @@
 """Plot phylogenetic tree using ETE toolkit."""
 
-from ete3 import NodeStyle, Tree, TreeStyle, faces
+from ete3 import Tree, TreeStyle, faces
 from ete3.treeview.faces import DynamicItemFace, TextFace
 from PyQt5 import QtCore
 from PyQt5.QtGui import QPen
 from PyQt5.QtWidgets import QGraphicsRectItem, QGraphicsTextItem
 
 import fungphy.phylogeny as phy
-from fungphy.database import Genus, Organism, Section, Subgenus, db
+from fungphy.database import Genus, Section, Species, Strain, StrainName, Subgenus, db
 
 
-def get_species(genera=None, subgenera=None, sections=None, species=None, oids=None):
+def get_species(
+    genera=None, subgenera=None, sections=None, species=None, strains=None, oids=None
+):
     """Query database for species."""
 
-    q = Organism.query.join(Section, Subgenus, Genus)
+    q = Strain.query.join(Species, Section, Subgenus, Genus)
 
     if genera:
         q = q.filter(Genus.name.in_(genera))
@@ -25,25 +27,31 @@ def get_species(genera=None, subgenera=None, sections=None, species=None, oids=N
         q = q.filter(Section.name.in_(sections))
 
     if species:
-        q = q.filter(Organism.species.in_(species))
+        q = q.filter(Species.epithet.in_(species))
+
+    if strains:
+        q = q.filter(
+            Strain.strain_names.any(StrainName.name.in_(strains))
+            | Species.type.in_(strains)
+        )
 
     if oids:
-        q = q.filter(Organism.id.in_(oids))
+        q = q.filter(Strain.id.in_(oids))
 
     return q.all()
 
 
-def get_marker_sequences(organisms, marker, header_source="organism", header_attr="id"):
+def get_marker_sequences(strains, marker, header_source="organism", header_attr="id"):
     if header_source not in ("organism", "marker"):
         raise ValueError("Expected 'organism' or 'marker'")
 
     return [
         phy.Sequence(
-            header=getattr(o if header_source == "organism" else m, header_attr),
+            header=getattr(s if header_source == "organism" else m, header_attr),
             sequence=m.sequence,
         )
-        for o in organisms
-        for m in o.markers
+        for s in strains
+        for m in s.markers
         if m.marker == marker
     ]
 
@@ -71,13 +79,14 @@ class Summary:
             accessions.append(a)
 
         headers = ["Organism", *markers]
-        rows = [[o.name, *accs] for o, *accs in zip(organisms, *accessions)]
+        rows = [[o.species.name, *accs] for o, *accs in zip(organisms, *accessions)]
         return cls(headers, rows)
 
     def format(self, delimiter=",", show_headers=False):
         def join(array):
             return delimiter.join(str(element) for element in array)
-        rows = [self.header, *self.rows] if show_headers else self.rows
+
+        rows = [self.headers, *self.rows] if show_headers else self.rows
         return "\n".join(join(row) for row in rows)
 
 
@@ -92,6 +101,10 @@ def align_organisms(organisms, markers=None, **kwargs):
     for marker in markers:
         print(f"Aligning {marker}")
         sequences = get_marker_sequences(organisms, marker)
+        if marker == "ITS":
+            with open("seqs.fna", "w") as fp:
+                for s in sequences:
+                    fp.write(f"{s.fasta()}\n")
         msa = phy.align_sequences(sequences, name=marker, **kwargs)
         msas.append(msa)
 
@@ -122,17 +135,21 @@ def layout(node):
     if len(root) == 2 and node in root:
         return
 
+    def format_support(value):
+        support = "*" if value in (100, 1.0) else f"{value:g}"
+        return support
+
     if hasattr(node, "multi_support"):
         multi = "/".join(
-            f"{sup:g}" if isinstance(sup, (float, int)) else sup
+            format_support(sup) if isinstance(sup, (float, int)) else sup
             for sup in node.multi_support
         )
         support = TextFace(multi, fsize=7)
     else:
-        support = TextFace(f"{node.support:g}", fsize=7)
+        support = TextFace(format_support(node.support), fsize=7)
 
     support.margin_right = 4
-    support.margin_top = 16
+    support.margin_bottom = 15
 
     faces.add_face_to_node(support, node, position="float", column=1)
 
@@ -183,7 +200,7 @@ def merge_support_values(trees):
 
         for other in others:
             for node2 in other.get_descendants():
-                if leaves != node2.get_leaf_names():
+                if set(leaves) != set(node2.get_leaf_names()):
                     continue
                 add_support(node, node2.support)
                 found_match = True
@@ -193,20 +210,11 @@ def merge_support_values(trees):
     return new
 
 
-def label_maker(node, organism, bold=False, type_strain=False):
+def label_maker(node, label):
     """Form correctly formatted leaf label."""
 
     face = QGraphicsTextItem()
-
-    name = f"<i>{organism.genus[0]}. {organism.species}</i>  {organism.type_strain}"
-
-    if type_strain:
-        name += "<sup>T</sup>"
-
-    if bold:
-        name = f"<b>{name}</b>"
-
-    face.setHtml(name)
+    face.setHtml(label)
 
     # Create parent RectItem with TextItem in center
     fbox = face.boundingRect()
@@ -223,32 +231,76 @@ def label_maker(node, organism, bold=False, type_strain=False):
     return rect
 
 
-def read_tree(nwk, outgroup=None, bold=None, nontypes=None, min_support=2):
-    """Read in a Newick format tree."""
+def add_leaf_labels(tree, bold=None, types=None):
+    """Form leaf labels for an ETE3 Tree object.
 
-    tree = Tree(nwk)
+    Generates nice leaf labels using HTML formatting. Trying to use multiple separate
+    faces with separate columns results in weird spacing when exporting/editing.
 
-    oids = list(tree.iter_leaf_names())
-    organisms = {str(o.id): o for o in get_species(oids=oids)}
+    However, requires editing in .pdf format rather than .svg.
+    """
+
+    leaves = tree.get_leaf_names()
+
+    strains = {
+        str(strain.id): strain
+        for strain in Strain.query.filter(Strain.id.in_(leaves))
+    }
 
     for leaf in tree.iter_leaves():
-        o = organisms[leaf.name]
+        s = strains[leaf.name]
 
-        # Generate nice leaf labels using HTML
-        # However, requires editing in .pdf format rather than .svg, which chunks
-        # text into separate parts and messes up spacing
-        label = DynamicItemFace(
-            label_maker,
-            organism=o,
-            bold=True if bold and o.species in bold else False,
-            type_strain=not nontypes or (nontypes and o.species not in nontypes),
-        )
+        genus = s.species.genus
+        epithet = s.species.epithet
 
-        leaf.add_face(label, 0)
+        use_type = True if types and epithet in types else False
+        use_bold = True if bold and epithet in bold else False
 
+        name = s.strain_names[0].name if not use_type else s.species.type
+        label = f"<i>{genus[0]}. {epithet}</i>  {name}"
+
+        if s.is_ex_type and not use_type:
+            label += "<sup>T</sup>"
+        if use_bold:
+            label = f"<b>{label}</b>"
+
+        face = DynamicItemFace(label_maker, label=label)
+        leaf.add_face(face, 0)
+
+
+def set_outgroup(tree, species):
+    """Set an outgroup on an ETE3 Tree object."""
+
+    leaves = tree.get_leaf_names()
+
+    q = db.session.query(Strain.id).filter(Strain.id.in_(leaves)).join(Species)
+
+    if isinstance(species, str):
+        q = q.filter(Species.epithet == species)
+    else:
+        q = q.filter(Species.epithet.in_(species))
+
+    count = q.count()
+
+    if count == 0:
+        raise ValueError("Found no match for given species")
+
+    if count == 1:
+        node = str(q.first()[0])
+        tree.set_outgroup(node)
+
+    elif count > 1:
+        node = tree.get_common_ancestor(*[str(record[0]) for record in q])
+        tree.set_outgroup(node)
+
+
+def read_tree(nwk, outgroup=None, bold=None, types=None, label_leaves=True):
+    """Read in a Newick format tree."""
+    tree = Tree(nwk)
+    if label_leaves:
+        add_leaf_labels(tree, bold=bold, types=types)
     if outgroup:
-        tree.set_outgroup(outgroup)
-
+        set_outgroup(tree, outgroup)
     return tree
 
 
@@ -258,13 +310,18 @@ def read_tree_from_path(path, **kwargs):
     return read_tree(nwk, **kwargs)
 
 
-def read_trees_from_paths(paths, merge=False, **kwargs):
+def read_trees_from_paths(paths, merge=False, bold=None, types=None, outgroup=None):
     trees = []
     for path in paths:
-        tree = read_tree(path, **kwarg)
+        if merge:
+            tree = read_tree(path, outgroup=outgroup, label_leaves=False)
+        else:
+            tree = read_tree(path, outgroup=outgroup, bold=bold, types=types)
         trees.append(tree)
     if merge:
-        return merge_support_values(trees)
+        tree = merge_support_values(trees)
+        add_leaf_labels(tree, bold=bold, types=types)
+        return tree
     if len(paths) == 1:
         return trees[0]
     return trees
@@ -281,10 +338,11 @@ def _run(
     subgenera=None,
     sections=None,
     species=None,
+    strains=None,
     oids=None,
     markers=None,
     bold=None,
-    nontypes=None,
+    types=None,
     outgroup=None,
     trim_msa=False,
     run_fasttree=False,
@@ -301,6 +359,7 @@ def _run(
         subgenera=subgenera,
         sections=sections,
         species=species,
+        strains=strains,
         oids=oids,
     )
 
@@ -315,7 +374,7 @@ def _run(
         tree = read_tree(
             phy.fasttree(msa, gtr=gtr, gamma=gamma),
             bold=bold,
-            nontypes=nontypes,
+            types=types,
             outgroup=outgroup,
         )
         if show_tree:
