@@ -6,7 +6,16 @@ import sys
 
 import requests
 
-from database import db, Genus, Organism, ExType, Marker, Section, Subgenus
+from fungphy.database import (
+    Genus,
+    Marker,
+    Section,
+    Species,
+    Strain,
+    StrainName,
+    Subgenus,
+    db,
+)
 
 
 def parse_fasta(handle):
@@ -64,11 +73,11 @@ def parse_csv(fp):
     Assumes there is a header row; this is how marker types are discovered.
     """
 
+    species = []
     genuses = {}
     sections = {}
     subgenera = {}
     sequences = {}
-    organisms = []
 
     marker_names = None
 
@@ -91,27 +100,31 @@ def parse_csv(fp):
         if sect not in sections:
             sections[sect] = Section(name=sect, subgenus=subgenera[subg])
 
-        o = Organism(
-            species=sp,
+        sp = Species(
+            type=ty,
+            epithet=sp,
             reference=ref,
             mycobank=mbank,
-            type_strain=ty,
             section=sections[sect],
-            extypes=[ExType(strain=e) for e in ex.split(" = ")],
         )
 
-        for name, marker in zip(marker_names, markers):
-            sequences[marker] = {"type": name, "org": index}
+        st = Strain(is_ex_type=True, species=sp)
 
-        organisms.append(o)
+        for name in ex.split(" = "):
+            sn = StrainName(name=name, strain=st)
+
+        for name, marker in zip(marker_names, markers):
+            sequences[marker] = (index, name)
+
+        species.append(sp)
 
     print(f"Fetching {len(sequences)} sequences from NCBI")
     for accession, sequence in efetch_sequences(sequences).items():
-        org_id = sequences[accession]["org"]
-        marker = sequences[accession]["type"]
-        m = Marker(marker=marker, accession=accession, sequence=sequence)
-        organisms[org_id].markers.append(m)
+        sp_id, marker = sequences[accession]
+        species[sp_id].strains[0].markers.append(
+            Marker(marker=marker, accession=accession, sequence=sequence)
+        )
 
-    print(f"Committing {len(organisms)} organisms to DB")
-    db.session.add_all(organisms)
+    print(f"Committing {len(species)} organisms to DB")
+    db.session.add_all(species)
     db.session.commit()

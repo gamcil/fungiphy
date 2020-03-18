@@ -1,21 +1,11 @@
-"""Phylogenetic workflow.
-
-1. Extract sequences for specified markers
-2. MAFFT
-3. Trim ends to first/last non-gap columns
-4. Gene trees - FastTree?
-5. Species tree from reconciling gene trees - ASTRAL?
-"""
+"""Phylogenetic workflows."""
 
 
 import datetime
 import re
 import subprocess
-from collections import defaultdict
 from pathlib import Path
 from tempfile import NamedTemporaryFile as NTF
-
-from fungphy import database
 
 
 def parse_alignment(handle):
