@@ -59,7 +59,7 @@ Generates:
 <img src="img/example_tree.png" width="600" />
 
 Maximum likelihood tree inferred from combined ITS, BenA, CaM and RPB2 sequences of taxa
-within subg. Circumdati sect. *Flavi* using FastTree.
+within subg. *Circumdati* sect. *Flavi* using FastTree.
 
 ### Alignments & phylogeny
 Currently, procedures are in the `plot` module, so import that
