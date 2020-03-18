@@ -95,10 +95,10 @@ Retrieve marker sequences
 ```python3
 >>> markers = plot.get_marker_sequences(species, marker="ITS")
 >>> markers
-[<fungphy.phylogeny.Sequence object at 0x7f90d6e4dc40>, <fungphy.phylogeny.Sequence object at 0x7f90d6e4da60>, <fungphy.phylogeny.Sequence object at 0x7f90d6e6cfa0>, <fungphy.phylogeny.Sequence object at 0x7f90d6e06730>, <fungphy.phylogeny.Sequence object at 0x7f90d6e6cf70>, <fungphy.phylogeny.Sequence object at 0x7f90d6e6c460>, <fungphy.phylogeny.Sequence object at 0x7f90d6e6ce20>, <fungphy.phylogeny.Sequence object at 0x7f90d6e16190>, <fungphy.phylogeny.Sequence object at 0x7f90d6e06a00>, <fungphy.phylogeny.Sequence object at 0x7f90d6e164c0>, <fungphy.phylogeny.Sequence object at 0x7f90d6e069d0>]
+[<fungphy.phylogeny.Sequence object at 0x7f90d6e4dc40>, ... ]
 ```
 
-Note this returns instances of the `Sequence` class, which has a name and sequence
+Note this returns instances of the `Sequence` class, which have headers and sequences
 
 ```python3
 >>> sequence = markers[0]
@@ -108,7 +108,7 @@ Note this returns instances of the `Sequence` class, which has a name and sequen
 '>464\nAAGGATCATTACCGAGTGTAGGGTTCCCTCGTGGAGCCCAACC ... '
 ```
 
-Phylogenetic procedures are stored in the `phylogeny module`
+Phylogenetic procedures are stored in the `phylogeny` module
 ```python3
 from fungphy import phylogeny as phy
 ```
@@ -187,6 +187,11 @@ Write to file in RAxML format
 
 Ready to be analysed by e.g. modeltest-ng / raxml-ng.
 
+MultiMSAs can also be re-read back into Python if given an accompanying RAxML format
+partition file generated as above
+```python3
+>>> mmsa = phy.MultiMSA.from_msa_file("msa.fasta", "partitions.txt")
+```
 
 ### Summary table
 We can use the `Summary` class to generate a table of marker accessions for use in
