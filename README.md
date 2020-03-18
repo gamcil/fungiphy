@@ -54,7 +54,7 @@ Import .csv
 ... )    
 ```
 
-<img src="img/example_tree.png" width="300" />
+<img src="img/example_tree.png" width="600" />
 
 ### Alignments & phylogeny
 Currently, procedures are in the `plot` module, so import that
