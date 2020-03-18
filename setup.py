@@ -15,6 +15,6 @@ setup(
         "Topic :: Scientific/Engineering :: Bio-Informatics",
         "License :: OSI Approved :: MIT License",
     ],
-    install_requires=["ete3"],
+    install_requires=["ete3", "flask", "flask-sqlalchemy", "flask-admin"],
     python_requires=">=3.6",
 )
