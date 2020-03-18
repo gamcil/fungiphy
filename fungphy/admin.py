@@ -1,7 +1,18 @@
 from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
+from flask_admin.model.form import InlineFormAdmin
 
-from database import app, Organism, Marker, Section, Genus, Subgenus, ExType, db
+from fungphy.database import (
+    Genus,
+    Marker,
+    Section,
+    Species,
+    Strain,
+    StrainName,
+    Subgenus,
+    app,
+    db,
+)
 
 
 class MyView(BaseView):
@@ -13,45 +24,57 @@ class MyView(BaseView):
 admin = Admin(app)
 
 
-class OrganismView(ModelView):
+class StrainView(ModelView):
+    form_columns = ("id", "is_ex_type", "strain_names", "markers")
+    form_widget_args = {
+        "id": {"placeholder": "new id will be autocreated", "readonly": True},
+    }
+    inline_models = [
+        (Marker, dict(form_columns=["id", "marker", "accession", "sequence"])),
+        (StrainName, dict(form_columns=["id", "name"])),
+    ]
+
+
+class SpeciesView(ModelView):
     column_list = (
         "section.subgenus.genus",
-        "species",
+        "epithet",
         "mycobank",
         "reference",
-        "type_strain",
-        "extypes",
-        "markers",
+        "type",
+        "strains",
+        "markers"
     )
     column_sortable_list = (
         ("section.subgenus.genus", "section.subgenus.genus.name"),
-        "species",
+        "epithet",
         "mycobank",
         "reference",
-        "type_strain",
+        "type",
     )
     column_searchable_list = (
         "section.subgenus.genus.name",
-        "species",
+        "epithet",
         "mycobank",
         "reference",
-        "type_strain",
+        "type",
     )
     column_labels = {"section.subgenus.genus": "Genus"}
-    inline_models = (Marker, ExType)
+    inline_models = [StrainView(Strain, db.session)]
 
 
 class GenusView(ModelView):
     inline_models = (Subgenus,)
 
 
-# Organism editor
-admin.add_view(OrganismView(Organism, db.session))
-
 # Taxonomy
-# This should facilitate
 admin.add_view(GenusView(Genus, db.session))
 admin.add_view(ModelView(Subgenus, db.session))
 admin.add_view(ModelView(Section, db.session))
+
+# Organism editor
+admin.add_view(SpeciesView(Species, db.session))
+# admin.add_view(StrainView(Strain, db.session))
+
 
 app.run()
