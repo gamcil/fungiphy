@@ -54,7 +54,12 @@ Import .csv
 ... )    
 ```
 
+Generates:
+
 <img src="img/example_tree.png" width="600" />
+
+Maximum likelihood tree inferred from combined ITS, BenA, CaM and RPB2 sequences of taxa
+within subg. Circumdati sect. *Flavi* using FastTree.
 
 ### Alignments & phylogeny
 Currently, procedures are in the `plot` module, so import that
@@ -250,7 +255,8 @@ Visualise the tree
 
 This will open the ETE3 interactive tree browser for further manipulation. Magically,
 all our species information (including superscript Ts to indicate ex-type strains) have
-been filled in via the database (see top of page).
+been filled in via the database (see top of page). Also note that support values of 100
+or 1.0 are shortened to asterisks (\*).
 
 We can also load in trees generated using e.g. raxml-ng
 ```python3
