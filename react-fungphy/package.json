@@ -1,0 +1,48 @@
+{
+  "name": "react-fungphy",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@bumaga/tabs": "^0.2.0",
+    "@testing-library/jest-dom": "^4.2.4",
+    "@testing-library/react": "^9.5.0",
+    "@testing-library/user-event": "^7.2.1",
+    "match-sorter": "^4.1.0",
+    "namor": "^2.0.2",
+    "phylotree": "^1.0.0-alpha.22",
+    "react": "^16.13.1",
+    "react-dom": "^16.13.1",
+    "react-dropdown-select": "^4.3.1",
+    "react-router-dom": "^5.1.2",
+    "react-scripts": "^4.0.3",
+    "react-table": "^7.0.4",
+    "react-tabs": "^3.1.0",
+    "styled-components": "^5.1.0",
+    "typescript": "^3.8.3",
+    "vscode-html-languageserver-bin": "^1.4.0",
+    "yarn": "^1.22.4"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "start-api": "cd .. && FUNGPHY_DB=fungphy/fungphy.db FLASK_APP=fungphy venv/bin/flask run --no-debugger",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "eslintConfig": {
+    "extends": "react-app"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "proxy": "http://localhost:5000"
+}
