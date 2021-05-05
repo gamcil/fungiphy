@@ -1,17 +1,18 @@
+from flask import Blueprint
 from flask_admin import Admin, BaseView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_admin.model.form import InlineFormAdmin
 
-from fungphy.database import (
+from fungphy.database import session
+from fungphy.models import (
     Genus,
     Marker,
+    MarkerType,
     Section,
     Species,
     Strain,
     StrainName,
     Subgenus,
-    app,
-    db,
 )
 
 
@@ -21,17 +22,27 @@ class MyView(BaseView):
         return self.render("index.html")
 
 
-admin = Admin(app)
+class MarkerView(ModelView):
+    form_columns = ("id", "marker_type", "accession", "sequence")
+    form_widget_args = {
+        "id": {
+            "placeholder": "new id will be autocreated",
+            "readonly": True
+        },
+    }
 
 
 class StrainView(ModelView):
-    form_columns = ("id", "is_ex_type", "strain_names", "markers")
+    form_columns = ("id", "is_ex_type", "markers")
     form_widget_args = {
-        "id": {"placeholder": "new id will be autocreated", "readonly": True},
+        "id": {
+            "placeholder": "new id will be autocreated",
+            "readonly": True
+        },
     }
     inline_models = [
-        (Marker, dict(form_columns=["id", "marker", "accession", "sequence"])),
-        (StrainName, dict(form_columns=["id", "name"])),
+        MarkerView(Marker, session),
+        StrainName,
     ]
 
 
@@ -60,21 +71,16 @@ class SpeciesView(ModelView):
         "type",
     )
     column_labels = {"section.subgenus.genus": "Genus"}
-    inline_models = [StrainView(Strain, db.session)]
+    inline_models = [StrainView(Strain, session)]
 
 
 class GenusView(ModelView):
     inline_models = (Subgenus,)
 
 
-# Taxonomy
-admin.add_view(GenusView(Genus, db.session))
-admin.add_view(ModelView(Subgenus, db.session))
-admin.add_view(ModelView(Section, db.session))
-
-# Organism editor
-admin.add_view(SpeciesView(Species, db.session))
-# admin.add_view(StrainView(Strain, db.session))
-
-
-app.run()
+admin = Admin(template_mode="bootstrap3")
+admin.add_view(GenusView(Genus, session))
+admin.add_view(ModelView(Subgenus, session))
+admin.add_view(ModelView(Section, session))
+admin.add_view(SpeciesView(Species, session))
+admin.add_view(ModelView(MarkerType, session))

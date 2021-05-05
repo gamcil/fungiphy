@@ -1,5 +1,7 @@
 """Plot phylogenetic tree using ETE toolkit."""
 
+import csv
+
 from ete3 import Tree, TreeStyle, faces
 from ete3.treeview.faces import DynamicItemFace, TextFace
 from PyQt5 import QtCore
@@ -7,15 +9,32 @@ from PyQt5.QtGui import QPen
 from PyQt5.QtWidgets import QGraphicsRectItem, QGraphicsTextItem
 
 import fungphy.phylogeny as phy
-from fungphy.database import Genus, Section, Species, Strain, StrainName, Subgenus, db
+from fungphy.database import session
+from fungphy.models import (
+    Genus,
+    Section,
+    Species,
+    Strain,
+    StrainName,
+    Subgenus,
+    Marker,
+    MarkerType,
+)
 
 
 def get_species(
-    genera=None, subgenera=None, sections=None, species=None, strains=None, oids=None
+    genera=None,
+    subgenera=None,
+    sections=None,
+    species=None,
+    strains=None,
+    strain_ids=None,
+    markers=None,
+    types=False,
 ):
     """Query database for species."""
 
-    q = Strain.query.join(Species, Section, Subgenus, Genus)
+    q = session.query(Strain).join(Species, Section, Subgenus, Genus)
 
     if genera:
         q = q.filter(Genus.name.in_(genera))
@@ -35,8 +54,17 @@ def get_species(
             | Species.type.in_(strains)
         )
 
-    if oids:
-        q = q.filter(Strain.id.in_(oids))
+    if strain_ids:
+        q = q.filter(Strain.id.in_(strain_ids))
+
+    if types:
+        q = q.filter(Strain.is_ex_type==True)
+
+    if markers:
+        mq = session.query(MarkerType).filter(MarkerType.name.in_(markers)).all()
+        if len(mq) != len(markers):
+            raise ValueError("Marker mismatch; misspelled marker name?")
+        q = q.filter(*[Strain.markers.any(marker_type=m) for m in mq])
 
     return q.all()
 
@@ -67,20 +95,33 @@ class Summary:
         return iter(self.rows)
 
     @classmethod
-    def make(cls, organisms, markers, delimiter=","):
+    def from_strains(cls, strains, markers, delimiter=","):
         accessions = []
         for marker in markers:
             a = [
                 m.header
                 for m in get_marker_sequences(
-                    organisms, marker, header_source="marker", header_attr="accession"
+                    strains, marker, header_source="marker", header_attr="accession"
                 )
             ]
             accessions.append(a)
 
         headers = ["Organism", *markers]
-        rows = [[o.species.name, *accs] for o, *accs in zip(organisms, *accessions)]
+        rows = [[s.species.name, *accs] for s, *accs in zip(strains, *accessions)]
         return cls(headers, rows)
+
+    @classmethod
+    def from_table(cls, fp, has_headers=False, delimiter=","):
+        headers, rows = [], []
+
+        if has_headers:
+            headers = next(fp).strip().split(delimiter)
+
+        for row in fp:
+            row = row.strip().split(delimiter)
+            rows.append(row)
+
+        return cls(headers=headers, rows=rows)
 
     def format(self, delimiter=",", show_headers=False):
         def join(array):
@@ -90,24 +131,25 @@ class Summary:
         return "\n".join(join(row) for row in rows)
 
 
-def align_organisms(organisms, markers=None, **kwargs):
+def match_strain_markers(strains, markers):
+    """Return subset of Strain objects possessing all specified markers."""
+    good, bad = [], []
+    for strain in strains:
+        if set(markers).issubset(strain.marker_types):
+            good.append(strain)
+        else:
+            bad.append(strain)
+    return good, bad
+
+
+def align_strains(strains, markers, **kwargs):
     """Align markers from a list of Organism objects."""
-
-    if not markers:
-        raise ValueError("Expected marker")
-
     msas = []
-
     for marker in markers:
         print(f"Aligning {marker}")
-        sequences = get_marker_sequences(organisms, marker)
-        if marker == "ITS":
-            with open("seqs.fna", "w") as fp:
-                for s in sequences:
-                    fp.write(f"{s.fasta()}\n")
+        sequences = get_marker_sequences(strains, marker)
         msa = phy.align_sequences(sequences, name=marker, **kwargs)
         msas.append(msa)
-
     return phy.MultiMSA(msas)
 
 
@@ -154,7 +196,7 @@ def layout(node):
     faces.add_face_to_node(support, node, position="float", column=1)
 
 
-def get_tree_style():
+def get_tree_style(**kwargs):
     style = TreeStyle()
     style.layout_fn = layout
     style.allow_face_overlap = True
@@ -165,7 +207,25 @@ def get_tree_style():
     style.scale_length = 0.05
     style.show_branch_support = False
     style.show_leaf_name = False
+
+    for key, value in kwargs.items():
+        if value == "True":
+            value = True
+        else:
+            try:
+                value = float(value)
+            except ValueError:
+                pass
+        setattr(style, key, value)
+
     return style
+
+
+def add_support(node, support):
+    try:
+        node.multi_support.append(support)
+    except AttributeError:
+        node.add_feature("multi_support", [node.support, support])
 
 
 def merge_support_values(trees):
@@ -186,27 +246,20 @@ def merge_support_values(trees):
     new = base.copy()
     new.add_feature("base_trees", trees)
 
-    def add_support(node, support):
-        try:
-            node.multi_support.append(support)
-        except AttributeError:
-            node.add_feature("multi_support", [node.support, support])
-
     for node in new.get_descendants():
         leaves = node.get_leaf_names()
         found_match = False
         if not leaves:
             continue
-
         for other in others:
             for node2 in other.get_descendants():
                 if set(leaves) != set(node2.get_leaf_names()):
                     continue
                 add_support(node, node2.support)
                 found_match = True
-
             if not found_match:
                 add_support(node, "-")
+
     return new
 
 
@@ -244,7 +297,7 @@ def add_leaf_labels(tree, bold=None, types=None):
 
     strains = {
         str(strain.id): strain
-        for strain in Strain.query.filter(Strain.id.in_(leaves))
+        for strain in session.query(Strain).filter(Strain.id.in_(leaves))
     }
 
     for leaf in tree.iter_leaves():
@@ -273,7 +326,7 @@ def set_outgroup(tree, species):
 
     leaves = tree.get_leaf_names()
 
-    q = db.session.query(Strain.id).filter(Strain.id.in_(leaves)).join(Species)
+    q = session.query(Strain.id).filter(Strain.id.in_(leaves)).join(Species)
 
     if isinstance(species, str):
         q = q.filter(Species.epithet == species)

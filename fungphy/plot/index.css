@@ -1,0 +1,22 @@
+#modal {
+	display: none;
+	position: absolute;
+	background-color: hsla(0, 0%, 20%, 0.9);
+	color: white;
+	padding: 4px;
+	border-radius: 4px;
+	font-size: 12;
+}
+
+.modalList {
+	display: flex;
+	flex-direction: column;
+}
+
+.modalList div {
+	margin-bottom: 2px;
+}
+
+input[type="radio"] {
+	vertical-align: baseline;
+}

@@ -95,7 +95,7 @@ class MultiMSA:
             self.partitions.append(position)
 
     def __add__(self, other):
-        if not self.headers_match(other):
+        if self.msas and not self.headers_match(other):
             raise ValueError("Headers do not match")
         return MultiMSA(self.msas + other.msas)
 
@@ -130,17 +130,25 @@ class MultiMSA:
         )
 
     @classmethod
-    def from_fasta_files(cls, files, tool="mafft", trim_msa=True):
-        msas = []
-        for fasta in files:
-            m = align(fasta, tool=tool, name=Path(fasta).stem)
-            if trim_msa:
-                m = trim(m)
+    def from_fasta_files(cls, files, names=None, tool="mafft", trim_msa=True,
+                         align=False):
+        if names and len(files) != len(names):
+            raise ValueError("File list different size than name list")
+        msas, size = [], len(files)
+        for i in range(size):
+            fasta = files[i]
+            name = names[i] if names else Path(fasta).stem
+            if align:
+                m = align(fasta, tool=tool, name=name)
+                if trim_msa:
+                    m = trim(m)
+            else:
+                m = MSA.from_file_path(fasta, name=name)
             msas.append(m)
         return cls(msas)
 
     @classmethod
-    def from_msa_file(cls, msa_file, partition_file):
+    def from_partitioned(cls, msa_file, partition_file):
         """Read in multilocus MSA file, split by partition.
 
         msa_file should be MSA in FASTA format, partition_file should be in
@@ -211,6 +219,12 @@ class MSA:
     def from_file(cls, fp, name=None):
         return cls(records=parse_alignment(fp), name=name)
 
+    @classmethod
+    def from_file_path(cls, path, name=None):
+        with open(path) as fp:
+            msa = cls.from_file(fp, name=name)
+        return msa
+
 
 class Sequence:
     """Represents a sequence in a FASTA file."""
@@ -246,10 +260,14 @@ def align_sequences(sequences, name=None, tool="mafft", cpu=2, trim_msa=False):
 
 def align(fasta, tool="mafft", name=None, cpu=2):
     """Align FASTA file with MAFFT."""
-    if tool == "mafft":
+    if tool == "linsi":
         cmd = ["linsi", "--quiet", "--thread", str(cpu), fasta]
+    elif tool == "mafft":
+        cmd = ["mafft", "--quiet", "--auto", "--thread", str(cpu), fasta]
     elif tool == "muscle":
         cmd = ["muscle", "-in", fasta, "-quiet"]
+    else:
+        raise ValueError("Expected 'mafft' or 'muscle'")
     process = subprocess.run(cmd, stdout=subprocess.PIPE)
     return MSA.from_file(process.stdout.decode().split("\n"), name=name)
 
@@ -314,13 +332,14 @@ def fasttree(msa, **kwargs):
         # Check if argument is a boolean flag
         if value is True:
             cmd.append(f"-{key}")
+        elif value is False:
+            pass
         else:
             cmd.extend([f"-{key}", value])
 
     process = subprocess.run(cmd, text=True, input=msa.fasta(), capture_output=True)
 
     return process.stdout.strip()
-
 
 
 def astral(trees):

@@ -3,19 +3,19 @@
 
 import csv
 import sys
+import unicodedata
 
 import requests
 
-from fungphy.database import (
-    Genus,
+from fungphy.models import (
     Marker,
+    MarkerType,
     Section,
     Species,
     Strain,
     StrainName,
-    Subgenus,
-    db,
 )
+from fungphy.database import session
 
 
 def parse_fasta(handle):
@@ -62,69 +62,130 @@ def efetch_sequences(headers):
     return sequences
 
 
+def get_sections():
+    return {
+        section.name: section.id
+        for section in session.query(Section)
+    }
+
+
+def get_strain_names():
+    return set(
+        strain.name
+        for strain in session.query(StrainName)
+    )
+
+
+def get_marker_types():
+    return {
+        marker.name: marker.id
+        for marker in session.query(MarkerType)
+    }
+
+
+def get_marker_accessions():
+    return set(
+        marker.accession
+        for marker in session.query(Marker)
+    )
+
+
 def parse_csv(fp):
     """Parse marker table, delimited by '|'.
 
     Assumes columns:
-        Genus|Species|Reference|MycoBank ID|Type|Ex-types|Subgenus|Section|*markers
+        Epithet|Reference|MycoBank ID|Type|Ex-types|Section|*markers
 
     Ex-types should be delimited by ' = ', as in taxonomy papers.
 
     Assumes there is a header row; this is how marker types are discovered.
     """
 
-    species = []
-    genuses = {}
-    sections = {}
-    subgenera = {}
-    sequences = {}
+    # Get current sections/strains for comparison
+    sections = get_sections()
+    strain_names = get_strain_names()
+    marker_types = get_marker_types()
+    marker_accessions = get_marker_accessions()
 
+    species = []
+    sequences = {}
     marker_names = None
 
     reader = csv.reader(fp, delimiter="|")
+    marker_ids = []
+
+    # Validate marker types
+    for marker in next(reader)[6:]:
+        if marker not in marker_types:
+            raise ValueError(
+                f"Could not find marker {marker} in database,"
+                f" exiting. Valid markers: {marker_types.keys()}"
+            )
+        marker_ids.append(marker_types[marker])
 
     print(f"Parsing: {fp.name}")
-    for index, row in enumerate(reader, -1):
-        gen, sp, ref, mbank, ty, ex, subg, sect, *markers = row
-
-        if index == -1:  # start enum at -1 so matches organism index at 0
-            marker_names = markers
-            continue
-
-        if gen not in genuses:
-            genuses[gen] = Genus(name=gen)
-
-        if subg not in subgenera:
-            subgenera[subg] = Subgenus(name=subg, genus=genuses[gen])
+    species_index = 0
+    for index, row in enumerate(reader):
+        (
+            epithet,
+            ref,
+            mbank,
+            ty,
+            ex,
+            sect,
+            *markers
+        ) = [unicodedata.normalize("NFKC", field) for field in row]
 
         if sect not in sections:
-            sections[sect] = Section(name=sect, subgenus=subgenera[subg])
+            print(f"Could not find section {sect} in database, skipping")
+            continue
 
-        sp = Species(
-            type=ty,
-            epithet=sp,
-            reference=ref,
-            mycobank=mbank,
-            section=sections[sect],
-        )
+        names = ex.split(" = ")
+        if strain_names.issuperset(names):
+            print(f"Row {index + 1} ({epithet}) has duplicate strain name, skipping")
+            continue
+
+        if marker_accessions.issuperset(markers):
+            print(f"Row {index + 1} ({epithet}) has duplicate marker, skipping")
+            continue
+
+        sp = session.query(Species).filter(Species.epithet == epithet).first()
+
+        if not sp:
+            sp = Species(
+                type=ty,
+                epithet=sp,
+                reference=ref,
+                mycobank=mbank,
+                section_id=sections[sect],
+            )
 
         st = Strain(is_ex_type=True, species=sp)
 
         for name in ex.split(" = "):
+            print("ex", ex.split(" = "))
             sn = StrainName(name=name, strain=st)
 
-        for name, marker in zip(marker_names, markers):
-            sequences[marker] = (index, name)
+        for marker_id, marker in zip(marker_ids, markers):
+            sequences[marker] = (species_index, len(sp.strains) - 1, marker_id)
 
         species.append(sp)
+        species_index += 1
+
+    if not species:
+        print("No new species, exiting")
+        return
 
     print(f"Fetching {len(sequences)} sequences from NCBI")
     for accession, sequence in efetch_sequences(sequences).items():
-        sp_id, marker = sequences[accession]
-        species[sp_id].strains[0].markers.append(
-            Marker(marker=marker, accession=accession, sequence=sequence)
+        sp_index, st_index, marker_id = sequences[accession]
+        marker = Marker(
+            marker_type_id=marker_id,
+            accession=accession,
+            sequence=sequence
         )
+        species[sp_index].strains[st_index].markers.append(marker)
 
     print(f"Committing {len(species)} organisms to DB")
-    db.session.add_all(species)
-    db.session.commit()
+    session.add_all(species)
+    session.commit()
