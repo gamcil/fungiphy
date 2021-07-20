@@ -16,9 +16,7 @@ import matchSorter from 'match-sorter';
 import IndeterminateCheckbox from './IndeterminateCheckbox';
 import MarkerSelector from './MarkerSelector';
 
-
 const NUC_URL = "https://ncbi.nlm.nih.gov/nuccore"
-
 
 function compositeClassName(names) {
 	const nameList = Object.entries(names).map(
@@ -26,7 +24,6 @@ function compositeClassName(names) {
   );
   return nameList.filter(e => !!e).join(" ");
 };
-
 
 function MarkersExistFilter(
 	{ column: { filterValue, setFilter, preFilteredRows, id } },
@@ -43,7 +40,6 @@ function MarkersExistFilter(
 	);
 }
 
-
 function hasMarkersFilterFn(rows, id, filterValue) {
 	if (!filterValue) {
 		return rows;
@@ -55,7 +51,6 @@ function hasMarkersFilterFn(rows, id, filterValue) {
 	})
 
 }
-
 
 function SelectColumnFilter({
   column: { filterValue, setFilter, preFilteredRows, id },

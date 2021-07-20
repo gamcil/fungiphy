@@ -2,7 +2,9 @@
 
 import csv
 
-from ete3 import Tree, TreeStyle, faces
+from collections import defaultdict
+
+from ete3 import Tree, TreeStyle, faces, NodeStyle
 from ete3.treeview.faces import DynamicItemFace, TextFace
 from PyQt5 import QtCore
 from PyQt5.QtGui import QPen
@@ -33,39 +35,29 @@ def get_species(
     types=False,
 ):
     """Query database for species."""
-
     q = session.query(Strain).join(Species, Section, Subgenus, Genus)
-
     if genera:
         q = q.filter(Genus.name.in_(genera))
-
     if subgenera:
         q = q.filter(Subgenus.name.in_(subgenera))
-
     if sections:
         q = q.filter(Section.name.in_(sections))
-
     if species:
         q = q.filter(Species.epithet.in_(species))
-
     if strains:
         q = q.filter(
             Strain.strain_names.any(StrainName.name.in_(strains))
             | Species.type.in_(strains)
         )
-
     if strain_ids:
         q = q.filter(Strain.id.in_(strain_ids))
-
     if types:
         q = q.filter(Strain.is_ex_type==True)
-
     if markers:
         mq = session.query(MarkerType).filter(MarkerType.name.in_(markers)).all()
         if len(mq) != len(markers):
             raise ValueError("Marker mismatch; misspelled marker name?")
         q = q.filter(*[Strain.markers.any(marker_type=m) for m in mq])
-
     return q.all()
 
 
@@ -106,8 +98,12 @@ class Summary:
             ]
             accessions.append(a)
 
-        headers = ["Organism", *markers]
-        rows = [[s.species.name, *accs] for s, *accs in zip(strains, *accessions)]
+        headers = ["ID", "Genus", "Subgenus", "Section", "Species", "Strain", *markers]
+        rows = [
+            [s.id, s.species.genus, s.species.subgenus, s.species.section.name,
+             s.species.epithet, s.names, *accs]
+            for s, *accs in zip(strains, *accessions)
+        ]
         return cls(headers, rows)
 
     @classmethod
@@ -284,6 +280,56 @@ def label_maker(node, label):
     return rect
 
 
+def add_section_annotations(tree: Tree) -> None:
+    """Annotates taxonomic sections.
+
+    Pretty hacky. Finds first common ancestor of leaf nodes per section,
+    then sets a bgcolor. If a section contains a single node, then only
+    that node is styled. Also adds a section label, but exact position
+    is determined by which node gets found first using search_nodes().
+
+    Relies on accurate section annotation - FP strains were set to Talaromyces
+    which breaks this.
+    """
+    leaves = tree.get_leaf_names()
+    sections = defaultdict(list)
+    for strain in session.query(Strain).filter(Strain.id.in_(leaves)):
+        if "FP" in strain.species.epithet:
+            continue
+        sections[strain.species.section.name].append(str(strain.id))
+
+    index = 0
+    colours = [
+        "LightSteelBlue",
+        "Moccasin",
+        "DarkSeaGreen",
+        "Khaki",
+        "LightSalmon",
+        "Turquoise",
+        "Thistle"
+    ]
+
+    for section, ids in sections.items():
+        # Find MRCA and set bgcolor of its node
+        style = NodeStyle()
+        style["bgcolor"] = colours[index]
+        if len(ids) == 1:
+            node = tree.search_nodes(name=ids[0])[0]
+        else:
+            node = tree.get_common_ancestor(*ids)
+        node.set_style(style)
+
+        # Grab first node found in this section, and add section label
+        node = tree.search_nodes(name=ids[0])[0]
+        face = faces.TextFace(section, fsize=20)
+        node.add_face(face, column=1, position="aligned")
+
+        # Wraparound colour scheme
+        index += 1
+        if index > len(colours) - 1:
+            index = 0
+
+
 def add_leaf_labels(tree, bold=None, types=None):
     """Form leaf labels for an ETE3 Tree object.
 
@@ -351,6 +397,7 @@ def read_tree(nwk, outgroup=None, bold=None, types=None, label_leaves=True):
     """Read in a Newick format tree."""
     tree = Tree(nwk)
     if label_leaves:
+        add_section_annotations(tree)
         add_leaf_labels(tree, bold=bold, types=types)
     if outgroup:
         set_outgroup(tree, outgroup)
@@ -373,6 +420,7 @@ def read_trees_from_paths(paths, merge=False, bold=None, types=None, outgroup=No
         trees.append(tree)
     if merge:
         tree = merge_support_values(trees)
+        add_section_annotations(tree)
         add_leaf_labels(tree, bold=bold, types=types)
         return tree
     if len(paths) == 1:

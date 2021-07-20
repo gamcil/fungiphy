@@ -118,7 +118,7 @@ def get_marker_sequences():
                 "id": marker.id,
                 "strain_id": marker.strain_id,
                 "sequence": marker.sequence,
-                "genus": marker.strain.species.genus,
+                "genus": marker.strain.species.section.subgenus.genus,
                 "epithet": marker.strain.species.epithet,
                 "strains": marker.strain.names,
             }
@@ -209,7 +209,7 @@ def get_strains(strain_ids=None):
             {
                 "id": strain.id,
                 "mycobank": strain.species.mycobank,
-                "subgenus": strain.species.subgenus,
+                "subgenus": strain.species.section.subgenus,
                 "section": strain.species.section.name,
                 "genus": strain.species.genus,
                 "epithet": strain.species.epithet,

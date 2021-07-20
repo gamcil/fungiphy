@@ -18,6 +18,8 @@ class Genus(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True)
 
+    subgenera = relationship("Subgenus", backref="genus", passive_deletes=True)
+
     def __str__(self):
         return self.name
 
@@ -31,11 +33,11 @@ class Subgenus(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
-    genus_id = Column(Integer, ForeignKey("genus.id"))
-    genus = relationship("Genus", backref=backref("subgenera", lazy=True))
+    genus_id = Column(Integer, ForeignKey("genus.id", ondelete="CASCADE"))
+    sections = relationship("Section", backref="subgenus", passive_deletes=True)
 
     def __str__(self):
-        return self.name
+        return self.name or ""
 
 
 class Section(Base):
@@ -47,11 +49,11 @@ class Section(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
 
-    subgenus_id = Column(Integer, ForeignKey("subgenus.id"))
-    subgenus = relationship("Subgenus", backref=backref("sections", lazy=True))
+    subgenus_id = Column(Integer, ForeignKey("subgenus.id", ondelete="CASCADE"))
+    species = relationship("Species", backref="section", passive_deletes=True)
 
     def __str__(self):
-        return self.name
+        return self.name or ""
 
 
 class Species(Base):
@@ -84,8 +86,8 @@ class Species(Base):
     mycobank = Column(String)
     reference = Column(String)
 
-    section_id = Column(Integer, ForeignKey("section.id"))
-    section = relationship("Section", backref=backref("species", lazy=True))
+    section_id = Column(Integer, ForeignKey("section.id", ondelete="CASCADE"))
+    strains = relationship("Strain", backref="species", passive_deletes=True)
 
     # Adjacency list to allow synonymous species
     parent_id = Column(Integer, ForeignKey("species.id"))
@@ -122,8 +124,9 @@ class Strain(Base):
 
     is_ex_type = Column(Boolean)
 
-    species_id = Column(Integer, ForeignKey("species.id"))
-    species = relationship("Species", backref=backref("strains"), lazy=True)
+    species_id = Column(Integer, ForeignKey("species.id", ondelete="CASCADE"))
+    strain_names = relationship("StrainName", backref="strain", passive_deletes=True)
+    markers = relationship("Marker", backref="strain", passive_deletes=True)
 
     def __str__(self):
         return ", ".join(self.names)
@@ -154,8 +157,7 @@ class StrainName(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True)
 
-    strain_id = Column(Integer, ForeignKey("strain.id"))
-    strain = relationship("Strain", backref=backref("strain_names", lazy=True))
+    strain_id = Column(Integer, ForeignKey("strain.id", ondelete="CASCADE"))
 
     def __str__(self):
         return self.name
@@ -167,6 +169,8 @@ class MarkerType(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, unique=True)
     description = Column(String)
+
+    markers = relationship("Marker", backref="marker_type", passive_deletes=True)
 
     def __repr__(self):
         return self.name
@@ -181,11 +185,8 @@ class Marker(Base):
     accession = Column(String, unique=True)
     sequence = Column(String)
 
-    marker_type_id = Column(Integer, ForeignKey("marker_type.id"))
-    marker_type = relationship("MarkerType", backref=backref("markers"))
-
-    strain_id = Column(Integer, ForeignKey("strain.id"))
-    strain = relationship("Strain", backref=backref("markers", lazy=True))
+    marker_type_id = Column(Integer, ForeignKey("marker_type.id", ondelete="CASCADE"))
+    strain_id = Column(Integer, ForeignKey("strain.id", ondelete="CASCADE")) 
 
     def __repr__(self):
         return f"{self.marker}:{self.accession}"

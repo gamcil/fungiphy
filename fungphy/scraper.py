@@ -53,6 +53,14 @@ def get_species(url):
     return [sp.get_text() for sp in soup.find_all("p")]
 
 
+def write_table(species: list, output: str):
+    """Write scraped species information to organism table""" 
+    with open(output, "w") as fp:
+        for sp in species:
+            fields = ",".join(sp)
+            fp.write(fields)
+
+
 def scrape(urls=None):
     if not urls:
         urls = iter_urls()

@@ -64,7 +64,7 @@ class SpeciesView(ModelView):
         "type",
     )
     column_searchable_list = (
-        "section.subgenus.genus.name",
+        # "section.subgenus.genus.name",
         "epithet",
         "mycobank",
         "reference",

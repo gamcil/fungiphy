@@ -1,14 +1,16 @@
 """Phylogenetic workflows."""
 
+from __future__ import annotations
 
 import datetime
 import re
 import subprocess
 from pathlib import Path
 from tempfile import NamedTemporaryFile as NTF
+from typing import TextIO, List
 
 
-def parse_alignment(handle):
+def parse_alignment(handle: TextIO) -> List[Sequence]:
     header, body = "", ""
     records = []
     for line in handle:
@@ -233,6 +235,9 @@ class Sequence:
         self.header = header
         self.sequence = sequence
 
+    def __str__(self):
+        return self.fasta()
+
     def __getitem__(self, value):
         if isinstance(value, slice):
             return Sequence(self.header, self.sequence[value.start : value.stop])
@@ -241,6 +246,11 @@ class Sequence:
 
     def fasta(self):
         return f">{self.header}\n{self.sequence}"
+
+    @staticmethod
+    def from_fasta(fasta: str) -> Sequence:
+        with open(fasta) as fp:
+            return parse_alignment(fp)[0]
 
 
 def align_sequences(sequences, name=None, tool="mafft", cpu=2, trim_msa=False):
@@ -280,49 +290,6 @@ def iqtree(msa):
     return tree.stdout.decode()
 
 
-def make(markers, folder=None):
-    """Run the workflow"""
-
-    # Pre: Set up directory
-    today = datetime.datetime.now().strftime("%Y_%b_%d_%M%S")
-    print(f"Making directory:\n  {today}")
-    folder = Path(today)
-    folder.mkdir()
-
-    # 1. select marker sequences from db
-    print("Retrieving markers from DB")
-    organisms = query(markers)
-
-    # 2. make named temp file fasta
-    for marker in markers:
-        fasta_file = folder / f"{marker}.fna"
-
-        print(f"Forming '{marker}' FASTA file:\n  {fasta_file}")
-        with fasta_file.open("w") as fp:
-            for organism in organisms.values():
-                fp.write(organism[marker] + "\n")
-
-        print("Aligning with MAFFT")
-        msa = align(fasta_file)
-        pre = len(msa)
-        msa = trim(msa)
-        msa_file = folder / f"{marker}.msa"
-
-        print(f"Trimmed MSA from {pre} to {len(msa)} columns")
-        print(f"Writing:\n  {msa_file}")
-        with (folder / f"{marker}.msa").open("w") as fp:
-            fp.write(msa.fasta())
-
-        print("Generating gene tree with IQ-Tree:")
-        print(f"  report: {msa_file}.iqtree")
-        print(f"    tree: {msa_file}.treefile")
-        print(f"     log: {msa_file}.log")
-        tree(msa_file)
-
-    # TODO: reconcile gene trees with ASTRAL-III
-    #       or do partition analyses with IQ-Tree
-
-
 def fasttree(msa, **kwargs):
     """Run FastTree on an MSA."""
 
@@ -340,8 +307,3 @@ def fasttree(msa, **kwargs):
     process = subprocess.run(cmd, text=True, input=msa.fasta(), capture_output=True)
 
     return process.stdout.strip()
-
-
-def astral(trees):
-    """Reconcile gene trees to form unrooted species tree with ASTRAL."""
-    pass
