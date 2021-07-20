@@ -104,6 +104,15 @@ def fungphy(
 
     if tree_in:
         print(f"Loading tree from: {tree_in}")
+        if json_filters:
+            with open(json_filters) as fp:
+                filters = json.load(fp)
+            if "bold" in filters:
+                tree_bold = filters["bold"]
+            if "type" in filters:
+                tree_type = filters["type"]
+            if "outgroup" in filters:
+                outgroup = filters["outgroup"]
         tree = plot.read_trees_from_paths(
             tree_in,
             bold=tree_bold,
@@ -173,8 +182,30 @@ def fungphy(
                     markers=markers,
                 )
 
+            if fasta_out:
+                for marker in markers:
+                    name = fasta_out.replace("*", marker)
+                    sequences = plot.get_marker_sequences(strains, marker)
+                    fasta = "\n".join(s.fasta() for s in sequences)
+
+                    print(f"Writing unaligned {marker} sequences to: {name}")
+                    with open(name, "w") as fp:
+                        fp.write(fasta)
+
             print(f"Found {len(strains)} strains matching filters")
             msa = plot.align_strains(strains, markers=markers, trim_msa=trim_msa)
+
+            if msa_out:
+                if "*" in msa_out:
+                    for m in msa:
+                        name = msa_out.replace("*", m.name)
+                        print(f"Writing aligned {m.name} sequences to: {name}")
+                        with open(name, "w") as fp:
+                            fp.write(m.fasta())
+                else:
+                    print(f"Writing combined alignment to: {msa_out}")
+                    with open(msa_out, "w") as fp:
+                        fp.write(msa.fasta())
 
         if not strains:
             strains = plot.get_species(strain_ids=msa.headers)
@@ -190,28 +221,6 @@ def fungphy(
                 types=tree_type,
                 outgroup=outgroup,
             )
-
-        if fasta_out:
-            for marker in markers:
-                name = fasta_out.replace("*", marker)
-                sequences = plot.get_marker_sequences(strains, marker)
-                fasta = "\n".join(s.fasta() for s in sequences)
-
-                print(f"Writing unaligned {marker} sequences to: {name}")
-                with open(name, "w") as fp:
-                    fp.write(fasta)
-
-        if msa_out:
-            if "*" in msa_out:
-                for m in msa:
-                    name = msa_out.replace("*", m.name)
-                    print(f"Writing aligned {m.name} sequences to: {name}")
-                    with open(name, "w") as fp:
-                        fp.write(m.fasta())
-            else:
-                print(f"Writing combined alignment to: {msa_out}")
-                with open(msa_out, "w") as fp:
-                    fp.write(msa.fasta())
 
         if partition_out:
             print(f"Writing partitions to: {partition_out}")
@@ -230,9 +239,7 @@ def fungphy(
             tree.write(format=0, outfile=tree_out)
 
     if tree:
-        if tree_flip:
-            for node in tree.traverse():
-                node.swap_children()
+        tree.ladderize(1 if tree_flip else 0)
         if tree_style:
             ts = plot.get_tree_style(**tree_style)
             plot.show(tree, ts=ts)
