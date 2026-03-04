@@ -10019,8 +10019,8 @@ unbox-primitive@^1.1.0:
     which-boxed-primitive "^1.1.1"
 
 underscore@1.x:
-  version "1.13.1"
-  resolved "https://registry.npmjs.org/underscore/-/underscore-1.13.1.tgz"
+  version "1.13.8"
+  resolved "https://registry.yarnpkg.com/underscore/-/underscore-1.13.8.tgz#a93a21186c049dbf0e847496dba72b7bd8c1e92b"
 
 unicode-canonical-property-names-ecmascript@^1.0.4:
   version "1.0.4"
